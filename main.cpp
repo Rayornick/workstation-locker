@@ -2,7 +2,7 @@
 #include <iostream>
 #include <atomic>
 
-#include <mingw.thread.h>
+#include <thread>
 
 std::atomic<bool> abort_job(false);
 
