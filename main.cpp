@@ -8,16 +8,16 @@ std::atomic<bool> abort_job(false);
 
 void makeJob()
 {
+    LockWorkStation();
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
     SendMessage(
             (HWND)0xffff,   // HWND_BROADCAST
             0x0112,         // WM_SYSCOMMAND
             (WPARAM)0xf170, // SC_MONITORPOWER
             (LPARAM)0x0002  // POWER_OFF
-         );
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    
-    LockWorkStation();
+        );
 }
 
 void timerTillJob(uint32_t seconds_left)
@@ -48,10 +48,14 @@ void abortJob()
     DWORD num_read;
     
     in_handle = GetStdHandle(STD_INPUT_HANDLE);
-    
     while(!abort_job)
     {
+        GetNumberOfConsoleInputEvents(in_handle, &num_read);
+        if(num_read == 0)
+            continue;
+        
         ReadConsoleInput(in_handle, &input_record, 1, &num_read);
+        
         if(input_record.EventType == KEY_EVENT)
         {
             if (input_record.Event.KeyEvent.bKeyDown)
@@ -65,7 +69,7 @@ void abortJob()
 
 int main(int argc, char**argv)
 {
-    uint32_t seconds_till_jod = 20;
+    uint32_t seconds_till_jod = 20u;
     
     if(argc > 1)
     {
