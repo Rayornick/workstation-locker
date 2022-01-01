@@ -1,17 +1,20 @@
-#include <windows.h>
+//============================================================================
+// Name        : main.cpp
+// Author      : Ivan Smolyakov
+//============================================================================
+
 #include <iostream>
-#include <atomic>
-
 #include <thread>
+#include <windows.h>
 
-std::atomic<bool> abort_job(false);
+using namespace std::chrono;
 
 void makeJob()
 {
     LockWorkStation();
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    
+
+    std::this_thread::sleep_for(seconds(1));
+
     SendMessage(
             (HWND)0xffff,   // HWND_BROADCAST
             0x0112,         // WM_SYSCOMMAND
@@ -20,73 +23,75 @@ void makeJob()
         );
 }
 
-void timerTillJob(uint32_t seconds_left)
-{
-    std::cout << "     > Press any key to abort operation! <" << std::endl << std::endl;
-    std::cout << "Monitor will turned off and workstation will locked" << std::endl;
-    while(seconds_left > 0)
-    {
-        std::cout << "in " << seconds_left << " seconds...\r" << std::flush;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        seconds_left--;
-        
-        if(abort_job)
-            break;
-    }
-    
-    if(!abort_job)
-    {
-        abort_job = true;
-        makeJob();
-    }
-}
-
-void abortJob()
+bool abortJob(steady_clock::time_point untill_time)
 {
     HANDLE in_handle;
     INPUT_RECORD input_record;
     DWORD num_read;
-    
+
     in_handle = GetStdHandle(STD_INPUT_HANDLE);
-    while(!abort_job)
+
+	std::cout << "     > Press any key to abort operation! <" << std::endl << std::endl;
+    std::cout << "Monitor will turned off and workstation will locked" << std::endl;
+
+	auto calcTime = [](steady_clock::time_point untill_time)
+	{
+		auto cur_time = steady_clock::now();
+		return (cur_time >= untill_time)
+			? 0.0
+			: double((untill_time - cur_time).count()) * steady_clock::period::num / steady_clock::period::den;
+	};
+
+	uint32_t seconds_left = static_cast<uint32_t>(calcTime(untill_time));
+	uint32_t last_seconds_left = seconds_left + 1;
+
+    while(seconds_left)
     {
         GetNumberOfConsoleInputEvents(in_handle, &num_read);
+
+        if(seconds_left != last_seconds_left)
+        {
+        	std::cout << "in " << seconds_left << " seconds...\r" << std::flush;
+        	last_seconds_left = seconds_left;
+        }
+
+        seconds_left = static_cast<uint32_t>(calcTime(untill_time));
+
         if(num_read == 0)
             continue;
-        
+
         ReadConsoleInput(in_handle, &input_record, 1, &num_read);
-        
+
         if(input_record.EventType == KEY_EVENT)
         {
             if (input_record.Event.KeyEvent.bKeyDown)
             {
-                abort_job = true;
                 std::cout << "Operation aborted\r" << std::flush;
+				return true;
             }
         }
     }
+
+	return false;
 }
 
-int main(int argc, char**argv)
+int main(int argc, char** argv)
 {
-    uint32_t seconds_till_jod = 20u;
-    
+    uint32_t seconds_till_job = 20u;
+
     if(argc > 1)
     {
         try {
-            seconds_till_jod = std::clamp(std::stoul(argv[1]), 0ul, 60ul);
+            seconds_till_job = std::clamp(std::stoul(argv[1]), 0ul, 60ul);
         } catch (std::exception const &e) {
-            seconds_till_jod = 20u;
+            seconds_till_job = 20u;
         }
     }
-    
-    std::thread job_thread(timerTillJob, seconds_till_jod);
-    std::thread abort_job_thread(abortJob);
-    
-    job_thread.join();
-    abort_job_thread.join();
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+	if(!abortJob(steady_clock::now() + seconds(seconds_till_job)))
+		makeJob();
+
+    std::this_thread::sleep_for(seconds(1));
 
     return 0;
 }
